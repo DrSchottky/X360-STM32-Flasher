@@ -248,6 +248,19 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 		usbd_ep_write_packet(usbd_dev, 0x82, (uint8_t *)&Status, sizeof(Status));
 		return USBD_REQ_HANDLED;
 	}
+	case CMD_DATA_ERASE:
+	{
+		uint32_t * data = *(uint32_t **)buf;
+		nextBlock = *data << 5;
+		Status = XNAND_Erase(nextBlock);
+		usbd_ep_write_packet(usbd_dev, 0x82, (uint8_t *)"\0\0\0\0", 4);
+		return USBD_REQ_HANDLED;
+	}
+	case CMD_DATA_DEINIT:
+	{
+		XSPI_LeaveFlashmode();
+		return USBD_REQ_HANDLED;
+	}
 	}
 	return USBD_REQ_NOTSUPP;
 }
@@ -267,7 +280,6 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 			RX_WriteFlash(len, RX_Buffer);
 			RX_ToReceive -= bytesToReceive;
 			bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
-			//usbd_ep_write_packet(usbd_dev, 0x82, buf, len);
 	}
 }
 
