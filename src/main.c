@@ -43,6 +43,9 @@
 #define CMD_XBOX_PWROFF 0x11
 #define CMD_DEV_UPDATE  0xF0
 
+void TX_ReadData(uint8_t len, uint8_t* buffer);
+void RX_WriteFlash(uint8_t len, uint8_t* buffer);
+
 static const struct usb_device_descriptor dev = {
 	.bLength = USB_DT_DEVICE_SIZE,
 	.bDescriptorType = USB_DT_DEVICE,
@@ -124,8 +127,10 @@ uint32_t nextBlock;
 uint32_t TX_ToSend = 0;
 uint32_t RX_ToReceive  = 0;
 uint8_t TX_Buffer[64] = {0};
+uint8_t RX_Buffer[64] = {0};
 uint8_t bytesToSend;
 uint8_t bytesToReceive;
+uint8_t commandProcess;
 
 void TX_ReadData(uint8_t len, uint8_t* buffer)
 {
@@ -148,6 +153,43 @@ void TX_ReadData(uint8_t len, uint8_t* buffer)
         buffer += (readNow*4);
         wordsLeft -= readNow;
         len -= readNow;
+    }
+}
+
+void RX_WriteFlash(uint8_t len, uint8_t* buffer)
+{
+    len /= 4;
+
+    if(commandProcess == 0)
+    {
+        Status = XNAND_Erase(nextBlock);
+        XNAND_StartWrite();
+        commandProcess = 1;
+    }
+
+    while(len)
+    {
+        uint8_t writeNow;
+
+        if(!wordsLeft)
+        {
+            nextBlock++;
+            wordsLeft = 0x84;
+        }
+
+        writeNow = (len < wordsLeft) ? len : wordsLeft;
+        XNAND_WriteProcess(buffer, writeNow);
+
+        buffer += (writeNow*4);
+        wordsLeft -= writeNow;
+        len -= writeNow;
+
+        //execute write if buffer in NAND controller is filled
+        if(!wordsLeft)
+        {
+            Status = XNAND_WriteExecute(nextBlock-1);
+            XNAND_StartWrite();
+        }
     }
 }
 
@@ -190,6 +232,17 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 		}
 		return USBD_REQ_HANDLED;
 	}
+	case CMD_DATA_WRITE:
+	{
+		uint32_t * data = *(uint32_t **)buf;
+		nextBlock = *data << 5;
+		RX_ToReceive = *(data + 1);
+		Status = 0;
+	  	wordsLeft = 0;
+		commandProcess = 0;
+		bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
+		return USBD_REQ_HANDLED;
+	}
 	case CMD_DATA_STATUS:
 	{
 		usbd_ep_write_packet(usbd_dev, 0x82, (uint8_t *)&Status, sizeof(Status));
@@ -203,12 +256,18 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 {
 	(void)ep;
 	(void)usbd_dev;
+	if(bytesToReceive == 0)
+	{
+		return;
+	}
 
-	char buf[64];
-	int len = usbd_ep_read_packet(usbd_dev, 0x05, buf, 64);
+	int len = usbd_ep_read_packet(usbd_dev, 0x05, RX_Buffer, bytesToReceive);
 
 	if (len) {
-			usbd_ep_write_packet(usbd_dev, 0x82, buf, len);
+			RX_WriteFlash(len, RX_Buffer);
+			RX_ToReceive -= bytesToReceive;
+			bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
+			//usbd_ep_write_packet(usbd_dev, 0x82, buf, len);
 	}
 }
 
