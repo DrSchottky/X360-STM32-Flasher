@@ -11,8 +11,11 @@
 #include <stdint.h>
 
 void XSPI_Setup(void);
+void XSPI_Powerup(void);
+void XSPI_Shutdown(void);
 void SPI1_Transfer(uint8_t *, uint8_t *, int);
 void XSPI_EnterFlashmode(void);
+void XSPI_LeaveFlashmode(void);
 void XSPI_Read(uint8_t, uint8_t*);
 uint16_t XSPI_ReadWord(uint8_t);
 uint8_t XSPI_ReadByte(uint8_t);

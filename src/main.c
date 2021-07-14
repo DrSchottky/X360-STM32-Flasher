@@ -29,6 +29,7 @@
 #include "XSPI.h"
 #include "XNAND.h"
 #include "Delay.h"
+#include "XPower.h"
 
 #define CMD_DATA_READ   0x01
 #define CMD_DATA_WRITE  0x02
@@ -39,6 +40,7 @@
 #define CMD_DATA_EXEC   0x07
 #define CMD_DEV_VERSION 0x08
 #define CMD_XSVF_EXEC   0x09
+#define CMD_POST_GET	0x0B
 #define CMD_XBOX_PWRON  0x10
 #define CMD_XBOX_PWROFF 0x11
 #define CMD_DEV_UPDATE  0xF0
@@ -46,7 +48,7 @@
 void TX_ReadData(uint8_t len, uint8_t* buffer);
 void RX_WriteFlash(uint8_t len, uint8_t* buffer);
 
-static const struct usb_device_descriptor dev = {
+static struct usb_device_descriptor dev = {
 	.bLength = USB_DT_DEVICE_SIZE,
 	.bDescriptorType = USB_DT_DEVICE,
 	.bcdUSB = 0x0200,
@@ -115,7 +117,7 @@ static const struct usb_config_descriptor config = {
 
 static const char *usb_strings[] = {
 	"Black Sphere Technologies",
-	"CDC-ACM Demo",
+	"DrSchottky Flasher",
 	"DEMO",
 };
 
@@ -131,6 +133,9 @@ uint8_t RX_Buffer[64] = {0};
 uint8_t bytesToSend;
 uint8_t bytesToReceive;
 uint8_t commandProcess;
+uint8_t post_code = 0;
+volatile uint8_t last_read_post_code = 0;
+bool is_jrp = false;
 
 void TX_ReadData(uint8_t len, uint8_t* buffer)
 {
@@ -204,7 +209,15 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	switch (req->bRequest) {
 	case CMD_DEV_VERSION:
 	{
-		usbd_ep_write_packet(usbd_dev, 0x82, (uint8_t *)"\1\0\0\0", 4);
+		uint32_t * data = *(uint32_t **)buf;
+		volatile uint32_t argA = *data;
+		volatile uint32_t argB = *(data + 1);
+		uint8_t version[4] = {1, 0, 0, 0};
+		if(is_jrp)
+		{
+			version[0] = 16;
+		}
+		usbd_ep_write_packet(usbd_dev, 0x82, version, 4);
 		return USBD_REQ_HANDLED;
 	}
 	case CMD_DATA_INIT:
@@ -259,6 +272,27 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	case CMD_DATA_DEINIT:
 	{
 		XSPI_LeaveFlashmode();
+		return USBD_REQ_HANDLED;
+	}
+	case CMD_XBOX_PWRON:
+	{
+		PowerUp();
+		return USBD_REQ_HANDLED;
+	}
+	case CMD_XBOX_PWROFF:
+	{
+		Shutdown();
+		return USBD_REQ_HANDLED;
+	}
+	case CMD_POST_GET:
+	{
+		uint8_t post_resp;
+		if(last_read_post_code == post_code)
+			post_resp = 0;
+		else
+			post_resp = post_code;
+		usbd_ep_write_packet(usbd_dev, 0x82, (uint8_t*)&post_resp, 1);
+		last_read_post_code = post_code;
 		return USBD_REQ_HANDLED;
 	}
 	}
@@ -318,6 +352,7 @@ int main(void)
 
 	rcc_periph_clock_enable(RCC_GPIOA);
 	rcc_periph_clock_enable(RCC_GPIOC);
+	rcc_periph_clock_enable(RCC_GPIOB);
 	rcc_periph_clock_enable(RCC_SPI1);
 
 	/* Setup GPIOC Pin 12 to pull up the D+ high, so autodect works
@@ -325,13 +360,55 @@ int main(void)
 	gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ,
 		      GPIO_CNF_OUTPUT_OPENDRAIN, GPIO12);
 	gpio_clear(GPIOC, GPIO12);
+	gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO9 | GPIO8 | GPIO7 | GPIO6 | GPIO5 | GPIO4 | GPIO13 | GPIO14);
+	gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO2);
+	is_jrp = gpio_get(GPIOB,GPIO2) != 0;
+	if(is_jrp)
+	{
+		/* JR-P Mode */
+		dev.idVendor = 0x11d4;
+		dev.idProduct = 0x8338;
+	}
 
 	usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
 	usbd_register_set_config_callback(usbd_dev, cdcacm_set_config);
 	clock_setup();
 	ConfigureXGPIO();
 	XSPI_Setup();
-	
 	while (1)
+	{
 		usbd_poll(usbd_dev);
+		if(gpio_get(GPIOB, GPIO9))
+			post_code &= ~0x01;
+		else
+			post_code |= 0x01;
+		if(gpio_get(GPIOB, GPIO7))
+			post_code &= ~0x02;
+		else
+			post_code |= 0x02;
+		if(gpio_get(GPIOB, GPIO5))
+			post_code &= ~0x04;
+		else
+			post_code |= 0x04;
+		if(gpio_get(GPIOB, GPIO13))
+			post_code &= ~0x08;
+		else
+			post_code |= 0x08;
+		if(gpio_get(GPIOB, GPIO8))
+			post_code &= ~0x10;
+		else
+			post_code |= 0x10;
+		if(gpio_get(GPIOB, GPIO6))
+			post_code &= ~0x20;
+		else
+			post_code |= 0x20;
+		if(gpio_get(GPIOB, GPIO4))
+			post_code &= ~0x40;
+		else
+			post_code |= 0x40;
+		if(gpio_get(GPIOB, GPIO14))
+			post_code &= ~0x80;
+		else
+			post_code |= 0x80;
+	}
 }

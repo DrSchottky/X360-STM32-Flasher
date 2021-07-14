@@ -59,36 +59,70 @@ void SPI1_Transfer(uint8_t *outp, uint8_t *inp, int count) {
     }
 }
 
+void XSPI_Powerup(void)
+{
+	/*PINLOW(SPIPORT, KSK);
+	msleep(5);
+	PINHIGH(SPIPORT, KSK);
+	msleep(5);
+	
+	PINLOW(SPIPORT, KSK);
+	msleep(5);
+	PINHIGH(SPIPORT, KSK);
+	msleep(5);
+	
+	PINLOW(SPIPORT, KSK);
+	msleep(5);
+	PINHIGH(SPIPORT, KSK);
+	msleep(5);
+	
+	PINLOW(SPIPORT, KSK);
+	msleep(5);
+	PINHIGH(SPIPORT, KSK);*/
+	return;
+}
+
+void XSPI_Shutdown(void)
+{
+	/*PINHIGH(SPIPORT, SS);
+	PINLOW(SPIPORT, XX);
+	PINLOW(SPIPORT, EJ);
+	
+	msleep(50);
+	
+	PINHIGH(SPIPORT, EJ);*/
+	return;
+}
+
 void XSPI_EnterFlashmode(void)
 
 {
-	//PINLOW(SPIPORT, XX);
-	//HAL_GPIO_WritePin(XX_GPIO_Port, XX_Pin, GPIO_PIN_RESET);
 	XXReset();
 
-	//_delay_ms(50);
 	msleep(50);
 
-	//PINLOW(SPIPORT, SS);
-	//PINLOW(SPIPORT, EJ);
-	//HAL_GPIO_WritePin(SS_GPIO_Port, SS_Pin, GPIO_PIN_RESET);
-	//HAL_GPIO_WritePin(EJ_GPIO_Port, EJ_Pin, GPIO_PIN_RESET);
 	SSReset();
 	EJReset();
 
-	//_delay_ms(50);
 	msleep(50);
 
-	//PINHIGH(SPIPORT, XX);
-	//PINHIGH(SPIPORT, EJ);
-	/*HAL_GPIO_WritePin(XX_GPIO_Port, XX_Pin, GPIO_PIN_SET);
-	HAL_GPIO_WritePin(EJ_GPIO_Port, EJ_Pin, GPIO_PIN_SET);*/
 	XXSet();
 	EJSet();
 
-	//_delay_ms(50);
 	msleep(50);
 }
+
+void XSPI_LeaveFlashmode(void)
+{
+	SSSet();
+	EJReset();
+	
+	msleep(50);
+	
+	XXReset();
+	EJSet();
+}
+
 void XSPI_Read(uint8_t reg, uint8_t* buf)
 
 {
