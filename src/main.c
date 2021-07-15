@@ -116,8 +116,8 @@ static const struct usb_config_descriptor config = {
 };
 
 static const char *usb_strings[] = {
-	"Black Sphere Technologies",
-	"DrSchottky Flasher",
+	"DrSchottky",
+	"X360 STM32 Flasher",
 	"DEMO",
 };
 

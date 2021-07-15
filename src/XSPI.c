@@ -61,37 +61,35 @@ void SPI1_Transfer(uint8_t *outp, uint8_t *inp, int count) {
 
 void XSPI_Powerup(void)
 {
-	/*PINLOW(SPIPORT, KSK);
-	msleep(5);
-	PINHIGH(SPIPORT, KSK);
-	msleep(5);
+	KIOSKReset();
+	msleep(22);
+	KIOSKSet();
+	msleep(22);
 	
-	PINLOW(SPIPORT, KSK);
-	msleep(5);
-	PINHIGH(SPIPORT, KSK);
-	msleep(5);
+	KIOSKReset();
+	msleep(22);
+	KIOSKSet();
+	msleep(22);
 	
-	PINLOW(SPIPORT, KSK);
-	msleep(5);
-	PINHIGH(SPIPORT, KSK);
-	msleep(5);
+	KIOSKReset();
+	msleep(22);
+	KIOSKSet();
+	msleep(22);
 	
-	PINLOW(SPIPORT, KSK);
-	msleep(5);
-	PINHIGH(SPIPORT, KSK);*/
-	return;
+	KIOSKReset();
+	msleep(22);
+	KIOSKSet();
 }
 
 void XSPI_Shutdown(void)
 {
-	/*PINHIGH(SPIPORT, SS);
-	PINLOW(SPIPORT, XX);
-	PINLOW(SPIPORT, EJ);
+	SSSet();
+	XXReset();
+	EJReset();
 	
 	msleep(50);
 	
-	PINHIGH(SPIPORT, EJ);*/
-	return;
+	EJSet();
 }
 
 void XSPI_EnterFlashmode(void)

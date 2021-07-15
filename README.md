@@ -23,6 +23,9 @@ Added POST logger support (needs a 1v2->3v3 inverting shifter, you can build one
 - PB4: POST BIT 6
 - PB14: POST BIT 7
 
+## Power On/Off
+- PA1: KIOSK
+
 # Mode
 You can switch between NAND-X and JR-P modes by moving the jumper on BOOT1 header
 - 0: NAND-X/MTX Mode

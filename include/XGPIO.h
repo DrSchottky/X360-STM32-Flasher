@@ -10,6 +10,8 @@
 #define EJ_GPIO_Port GPIOA
 #define SS_Pin GPIO4
 #define SS_GPIO_Port GPIOA
+#define KIOSK_Pin GPIO1
+#define KIOSK_GPIO_Port GPIOA
 
 void ConfigureXGPIO(void);
 void SSSet(void);
@@ -20,5 +22,7 @@ void EJSet(void);
 void EJReset(void);
 void LEDSet(void);
 void LEDReset(void);
+void KIOSKSet(void);
+void KIOSKReset(void);
 
 #endif 

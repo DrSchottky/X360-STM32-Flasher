@@ -7,6 +7,7 @@ void ConfigureXGPIO()
     XXSet();
     EJSet();
     SSSet();
+    KIOSKSet();
     gpio_set_mode(LED_GPIO_Port, GPIO_MODE_OUTPUT_2_MHZ,
 		      GPIO_CNF_OUTPUT_PUSHPULL, LED_Pin);
     gpio_set_mode(XX_GPIO_Port, GPIO_MODE_OUTPUT_2_MHZ,
@@ -15,6 +16,8 @@ void ConfigureXGPIO()
 		      GPIO_CNF_OUTPUT_PUSHPULL, EJ_Pin);
     gpio_set_mode(SS_GPIO_Port, GPIO_MODE_OUTPUT_2_MHZ,
 		      GPIO_CNF_OUTPUT_PUSHPULL, SS_Pin);
+    gpio_set_mode(KIOSK_GPIO_Port, GPIO_MODE_OUTPUT_2_MHZ,
+		      GPIO_CNF_OUTPUT_PUSHPULL, KIOSK_Pin);
 }
 void SSSet()
 {
@@ -47,4 +50,12 @@ void LEDSet()
 void LEDReset()
 {
     gpio_clear(LED_GPIO_Port, LED_Pin);
+}
+void KIOSKSet()
+{
+    gpio_set(KIOSK_GPIO_Port, KIOSK_Pin);
+}
+void KIOSKReset()
+{
+    gpio_clear(KIOSK_GPIO_Port, KIOSK_Pin);
 }
