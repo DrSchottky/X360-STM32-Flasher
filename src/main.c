@@ -25,11 +25,14 @@
 #include <libopencm3/cm3/scb.h>
 #include <libopencm3/cm3/systick.h>
 #include <libopencm3/stm32/st_usbfs.h>
+#include <string.h>
 #include "XGPIO.h"
 #include "XSPI.h"
 #include "XNAND.h"
 #include "Delay.h"
 #include "XPower.h"
+#include "ports.h"
+#include "micro.h"
 
 #define CMD_DATA_READ   0x01
 #define CMD_DATA_WRITE  0x02
@@ -44,6 +47,9 @@
 #define CMD_XBOX_PWRON  0x10
 #define CMD_XBOX_PWROFF 0x11
 #define CMD_DEV_UPDATE  0xF0
+#define XSVF_COMPRESSION
+#define XSVF_BUFFER_SIZE 16000
+
 
 void TX_ReadData(uint8_t len, uint8_t* buffer);
 void RX_WriteFlash(uint8_t len, uint8_t* buffer);
@@ -136,6 +142,42 @@ uint8_t commandProcess;
 uint8_t post_code = 0;
 volatile uint8_t last_read_post_code = 0;
 bool is_jrp = false;
+bool flash_selected = false;
+uint8_t xsvf_buf[XSVF_BUFFER_SIZE];
+volatile uint16_t xsvf_buf_ptr = 0, xsvf_buf_len = 0;
+
+uint8_t xsvf_read_data(void)
+{
+	static uint8_t compressed_val = 0, compressed_val_occurrences = 0;
+	if (xsvf_buf_ptr < xsvf_buf_len)
+	{	
+		#ifdef XSVF_COMPRESSION
+		if (compressed_val_occurrences)
+		{
+			compressed_val_occurrences--;
+			if(!compressed_val_occurrences)
+				xsvf_buf_ptr+=2;
+			return compressed_val;
+		}
+		if(xsvf_buf[xsvf_buf_ptr] != xsvf_buf[xsvf_buf_ptr+1])
+		{
+			compressed_val = 0;
+			compressed_val_occurrences = 0;
+			return xsvf_buf[xsvf_buf_ptr++];
+		}
+		else
+		{
+			compressed_val = xsvf_buf[xsvf_buf_ptr];
+			compressed_val_occurrences = 1 + xsvf_buf[xsvf_buf_ptr+2];
+			return xsvf_buf[xsvf_buf_ptr++];
+		}
+		#else
+			return xsvf_buf[xsvf_buf_ptr++];
+		#endif
+		
+	}
+	return 0;
+}
 
 void TX_ReadData(uint8_t len, uint8_t* buffer)
 {
@@ -209,9 +251,9 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	switch (req->bRequest) {
 	case CMD_DEV_VERSION:
 	{
-		uint32_t * data = *(uint32_t **)buf;
+		/*uint32_t * data = *(uint32_t **)buf;
 		volatile uint32_t argA = *data;
-		volatile uint32_t argB = *(data + 1);
+		volatile uint32_t argB = *(data + 1);*/
 		uint8_t version[4] = {1, 0, 0, 0};
 		if(is_jrp)
 		{
@@ -223,6 +265,7 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	case CMD_DATA_INIT:
 	{
 		XSPI_EnterFlashmode();
+		flash_selected = true;
 		uint8_t tx_buf [4] = {0};
 		XSPI_Read(0, tx_buf);
 		XSPI_Read(0, tx_buf);
@@ -254,6 +297,14 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	  	wordsLeft = 0;
 		commandProcess = 0;
 		bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
+		if(!flash_selected)
+		{
+			xsvf_buf_len = 0;
+			xsvf_buf_ptr = 0;
+			if(bytesToReceive > XSVF_BUFFER_SIZE)
+				return USBD_REQ_NOTSUPP;
+			xsvfWriteInit();
+		}
 		return USBD_REQ_HANDLED;
 	}
 	case CMD_DATA_STATUS:
@@ -272,6 +323,7 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	case CMD_DATA_DEINIT:
 	{
 		XSPI_LeaveFlashmode();
+		flash_selected = false;
 		return USBD_REQ_HANDLED;
 	}
 	case CMD_XBOX_PWRON:
@@ -295,6 +347,19 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 		last_read_post_code = post_code;
 		return USBD_REQ_HANDLED;
 	}
+	case CMD_XSVF_EXEC:
+	{
+		int8_t result = 1;
+		while(true)
+		{
+			result = xsvfConsumeData();
+			if(result >= 0)
+			break;
+		}
+		if(result == 0)
+			return USBD_REQ_HANDLED;
+		return USBD_REQ_NOTSUPP;
+	}
 	}
 	return USBD_REQ_NOTSUPP;
 }
@@ -311,9 +376,19 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 	int len = usbd_ep_read_packet(usbd_dev, 0x05, RX_Buffer, bytesToReceive);
 
 	if (len) {
+		if(flash_selected)
+		{
 			RX_WriteFlash(len, RX_Buffer);
 			RX_ToReceive -= bytesToReceive;
 			bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
+		}
+		else
+		{
+			if(sizeof(xsvf_buf) - xsvf_buf_len < len)
+				return;
+			memcpy(&xsvf_buf[xsvf_buf_len], RX_Buffer, len);
+			xsvf_buf_len += len;
+		}
 	}
 }
 
@@ -375,6 +450,7 @@ int main(void)
 	clock_setup();
 	ConfigureXGPIO();
 	XSPI_Setup();
+	initPorts();
 	while (1)
 	{
 		usbd_poll(usbd_dev);
