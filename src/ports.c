@@ -34,10 +34,6 @@ inline void DLY()
 
 void initPorts(void)
 {
-  /*pinMode(TCK, OUTPUT);
-  pinMode(TMS, OUTPUT);
-  pinMode(TDI, OUTPUT);
-  pinMode(TDO, INPUT_PULLUP);*/
   gpio_set_mode(JTAG_GPIO_PORT, GPIO_MODE_OUTPUT_2_MHZ,
 		      GPIO_CNF_OUTPUT_PUSHPULL, TCK);
   gpio_set_mode(JTAG_GPIO_PORT, GPIO_MODE_OUTPUT_2_MHZ,
@@ -78,7 +74,7 @@ void setPort(uint16_t p,uint8_t val)
         // if (g_iTCK) r |= 1u << TCK_PIN; else r &= ~(1u << TCK_PIN);
         // GPIOB->ODR = r;
         //GPIOB->ODR = ( GPIOB->ODR & ~( (1u << TMS_PIN) | (1u << TDI_PIN) | (1u << TCK_PIN) ) ) | port_;
-        GPIOB_ODR= ( GPIOB_ODR & ~( (1u << TMS_PIN) | (1u << TDI_PIN) | (1u << TCK_PIN) ) ) | port_;
+        GPIO_ODR(JTAG_GPIO_PORT) = ( GPIO_ODR(JTAG_GPIO_PORT) & ~( (1u << TMS_PIN) | (1u << TDI_PIN) | (1u << TCK_PIN) ) ) | port_;
 
 #else
         digitalWrite( TMS, g_iTMS );

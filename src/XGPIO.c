@@ -18,6 +18,16 @@ void ConfigureXGPIO()
 		      GPIO_CNF_OUTPUT_PUSHPULL, SS_Pin);
     gpio_set_mode(KIOSK_GPIO_Port, GPIO_MODE_OUTPUT_2_MHZ,
 		      GPIO_CNF_OUTPUT_PUSHPULL, KIOSK_Pin);
+    
+    gpio_set_mode(JTAG_GPIO_PORT, GPIO_MODE_OUTPUT_2_MHZ,
+		      GPIO_CNF_OUTPUT_PUSHPULL, TCK);
+    gpio_set_mode(JTAG_GPIO_PORT, GPIO_MODE_OUTPUT_2_MHZ,
+                GPIO_CNF_OUTPUT_PUSHPULL, TMS);
+    gpio_set_mode(JTAG_GPIO_PORT, GPIO_MODE_OUTPUT_2_MHZ,
+                GPIO_CNF_OUTPUT_PUSHPULL, TDI);
+    gpio_set_mode(JTAG_GPIO_PORT, GPIO_MODE_INPUT,
+                GPIO_CNF_INPUT_PULL_UPDOWN, TDO);
+    gpio_set(JTAG_GPIO_PORT, TDO);
 }
 void SSSet()
 {

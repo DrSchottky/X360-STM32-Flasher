@@ -34,25 +34,37 @@
 #include "ports.h"
 #include "micro.h"
 
-#define CMD_DATA_READ   0x01
-#define CMD_DATA_WRITE  0x02
-#define CMD_DATA_INIT   0x03
-#define CMD_DATA_DEINIT 0x04
-#define CMD_DATA_STATUS 0x05
-#define CMD_DATA_ERASE  0x06
-#define CMD_DATA_EXEC   0x07
-#define CMD_DEV_VERSION 0x08
-#define CMD_XSVF_EXEC   0x09
-#define CMD_POST_GET	0x0B
-#define CMD_XBOX_PWRON  0x10
-#define CMD_XBOX_PWROFF 0x11
-#define CMD_DEV_UPDATE  0xF0
-#define XSVF_COMPRESSION
-#define XSVF_BUFFER_SIZE 16000
+#define CMD_DATA_READ		0x01
+#define CMD_DATA_WRITE		0x02
+#define CMD_DATA_INIT		0x03
+#define CMD_DATA_DEINIT		0x04
+#define CMD_DATA_STATUS		0x05
+#define CMD_DATA_ERASE		0x06
+#define CMD_DATA_EXEC		0x07
+#define CMD_DEV_VERSION		0x08
+#define CMD_XSVF_EXEC		0x09
+#define CMD_JR_XSVF_CMD		0x2E
+#define CMD_JR_XSVF_STATUS	0x2F
+#define CMD_POST_GET		0x0B
+#define CMD_XBOX_PWRON		0x10
+#define CMD_XBOX_PWROFF		0x11
+#define CMD_DEV_UPDATE		0xF0
+
+#define XSVF_STATUS_BUSY	0x20
+#define	XSVF_STATUS_WAIT	0x21
+#define XSVF_STATUS_COMP	0x22
+#define XSVF_STATUS_ERR		0x23
+
+#define XSVF_CMD_WRITE 		0x20
+#define XSVF_CMD_ERASE		0x24
+
+#define XSVF_BUFFER_SIZE	64
 
 
 void TX_ReadData(uint8_t len, uint8_t* buffer);
 void RX_WriteFlash(uint8_t len, uint8_t* buffer);
+
+usbd_device *usbd_dev;
 
 static struct usb_device_descriptor dev = {
 	.bLength = USB_DT_DEVICE_SIZE,
@@ -142,41 +154,17 @@ uint8_t commandProcess;
 uint8_t post_code = 0;
 volatile uint8_t last_read_post_code = 0;
 bool is_jrp = false;
-bool flash_selected = false;
 uint8_t xsvf_buf[XSVF_BUFFER_SIZE];
-volatile uint16_t xsvf_buf_ptr = 0, xsvf_buf_len = 0;
+volatile uint16_t xsvf_buf_ptr = 0, xsvf_buf_len = 0, xsvf_status = XSVF_STATUS_COMP;
 
 uint8_t xsvf_read_data(void)
 {
-	static uint8_t compressed_val = 0, compressed_val_occurrences = 0;
-	if (xsvf_buf_ptr < xsvf_buf_len)
-	{	
-		#ifdef XSVF_COMPRESSION
-		if (compressed_val_occurrences)
-		{
-			compressed_val_occurrences--;
-			if(!compressed_val_occurrences)
-				xsvf_buf_ptr+=2;
-			return compressed_val;
-		}
-		if(xsvf_buf[xsvf_buf_ptr] != xsvf_buf[xsvf_buf_ptr+1])
-		{
-			compressed_val = 0;
-			compressed_val_occurrences = 0;
-			return xsvf_buf[xsvf_buf_ptr++];
-		}
-		else
-		{
-			compressed_val = xsvf_buf[xsvf_buf_ptr];
-			compressed_val_occurrences = 1 + xsvf_buf[xsvf_buf_ptr+2];
-			return xsvf_buf[xsvf_buf_ptr++];
-		}
-		#else
-			return xsvf_buf[xsvf_buf_ptr++];
-		#endif
-		
+	while(xsvf_buf_ptr >= xsvf_buf_len)
+	{
+		xsvf_status = XSVF_STATUS_WAIT;
+		usbd_poll(usbd_dev);
 	}
-	return 0;
+	return xsvf_buf[xsvf_buf_ptr++];
 }
 
 void TX_ReadData(uint8_t len, uint8_t* buffer)
@@ -265,7 +253,6 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	case CMD_DATA_INIT:
 	{
 		XSPI_EnterFlashmode();
-		flash_selected = true;
 		uint8_t tx_buf [4] = {0};
 		XSPI_Read(0, tx_buf);
 		XSPI_Read(0, tx_buf);
@@ -297,14 +284,6 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	  	wordsLeft = 0;
 		commandProcess = 0;
 		bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
-		if(!flash_selected)
-		{
-			xsvf_buf_len = 0;
-			xsvf_buf_ptr = 0;
-			if(bytesToReceive > XSVF_BUFFER_SIZE)
-				return USBD_REQ_NOTSUPP;
-			xsvfWriteInit();
-		}
 		return USBD_REQ_HANDLED;
 	}
 	case CMD_DATA_STATUS:
@@ -323,7 +302,6 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 	case CMD_DATA_DEINIT:
 	{
 		XSPI_LeaveFlashmode();
-		flash_selected = false;
 		return USBD_REQ_HANDLED;
 	}
 	case CMD_XBOX_PWRON:
@@ -347,18 +325,30 @@ static enum usbd_request_return_codes cdcacm_control_request(usbd_device *usbd_d
 		last_read_post_code = post_code;
 		return USBD_REQ_HANDLED;
 	}
-	case CMD_XSVF_EXEC:
-	{
-		int8_t result = 1;
-		while(true)
+	case CMD_JR_XSVF_CMD:
+	{	
+		volatile uint8_t xsvf_cmd = **(uint8_t **)buf;
+		switch(xsvf_cmd)
 		{
-			result = xsvfConsumeData();
-			if(result >= 0)
-			break;
+			case XSVF_CMD_WRITE:
+				xsvf_buf_len = 0;
+				xsvf_buf_ptr = 0;
+				xsvf_status = XSVF_STATUS_WAIT;
+				xsvfWriteInit();
+				break;
+			case XSVF_CMD_ERASE:
+				xsvf_status = XSVF_STATUS_COMP;
+				break;
+			default:
+				xsvf_status = 0xFF;
 		}
-		if(result == 0)
-			return USBD_REQ_HANDLED;
-		return USBD_REQ_NOTSUPP;
+		return USBD_REQ_HANDLED;
+	}
+	case CMD_JR_XSVF_STATUS:
+	{	
+		uint16_t * data = *(uint16_t **)buf;
+		*data = xsvf_status;
+		return USBD_REQ_HANDLED;
 	}
 	}
 	return USBD_REQ_NOTSUPP;
@@ -368,26 +358,26 @@ static void cdcacm_data_rx_cb(usbd_device *usbd_dev, uint8_t ep)
 {
 	(void)ep;
 	(void)usbd_dev;
-	if(bytesToReceive == 0)
-	{
-		return;
-	}
 
-	int len = usbd_ep_read_packet(usbd_dev, 0x05, RX_Buffer, bytesToReceive);
+	int len = usbd_ep_read_packet(usbd_dev, 0x05, RX_Buffer, sizeof(RX_Buffer));
 
 	if (len) {
-		if(flash_selected)
+		if(xsvf_status != XSVF_STATUS_WAIT)
 		{
+			if(bytesToReceive == 0)
+			{
+				return;
+			}
 			RX_WriteFlash(len, RX_Buffer);
 			RX_ToReceive -= bytesToReceive;
 			bytesToReceive = (RX_ToReceive > sizeof(RX_Buffer)) ? sizeof(RX_Buffer) : RX_ToReceive;
 		}
 		else
 		{
-			if(sizeof(xsvf_buf) - xsvf_buf_len < len)
-				return;
-			memcpy(&xsvf_buf[xsvf_buf_len], RX_Buffer, len);
-			xsvf_buf_len += len;
+			memcpy(xsvf_buf, RX_Buffer, len);
+			xsvf_status = XSVF_STATUS_BUSY;
+			xsvf_buf_len = len;
+			xsvf_buf_ptr = 0;
 		}
 	}
 }
@@ -418,43 +408,9 @@ static void cdcacm_set_config(usbd_device *usbd_dev, uint16_t wValue)
 				cdcacm_control_request);
 }
 
-
-int main(void)
+static void read_post()
 {
-	usbd_device *usbd_dev;
-
-	rcc_clock_setup_in_hse_8mhz_out_72mhz();
-
-	rcc_periph_clock_enable(RCC_GPIOA);
-	rcc_periph_clock_enable(RCC_GPIOC);
-	rcc_periph_clock_enable(RCC_GPIOB);
-	rcc_periph_clock_enable(RCC_SPI1);
-
-	/* Setup GPIOC Pin 12 to pull up the D+ high, so autodect works
-	 * with the bootloader.  The circuit is active low. */
-	gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ,
-		      GPIO_CNF_OUTPUT_OPENDRAIN, GPIO12);
-	gpio_clear(GPIOC, GPIO12);
-	gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO9 | GPIO8 | GPIO7 | GPIO6 | GPIO5 | GPIO4 | GPIO13 | GPIO14);
-	gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO2);
-	is_jrp = gpio_get(GPIOB,GPIO2) != 0;
-	if(is_jrp)
-	{
-		/* JR-P Mode */
-		dev.idVendor = 0x11d4;
-		dev.idProduct = 0x8338;
-	}
-
-	usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
-	usbd_register_set_config_callback(usbd_dev, cdcacm_set_config);
-	clock_setup();
-	ConfigureXGPIO();
-	XSPI_Setup();
-	initPorts();
-	while (1)
-	{
-		usbd_poll(usbd_dev);
-		if(gpio_get(GPIOB, GPIO9))
+	if(gpio_get(GPIOB, GPIO9))
 			post_code &= ~0x01;
 		else
 			post_code |= 0x01;
@@ -486,5 +442,49 @@ int main(void)
 			post_code &= ~0x80;
 		else
 			post_code |= 0x80;
+}
+
+int main(void)
+{
+
+	rcc_clock_setup_in_hse_8mhz_out_72mhz();
+
+	rcc_periph_clock_enable(RCC_GPIOA);
+	rcc_periph_clock_enable(RCC_GPIOC);
+	rcc_periph_clock_enable(RCC_GPIOB);
+	rcc_periph_clock_enable(RCC_SPI1);
+
+	/* Setup GPIOC Pin 12 to pull up the D+ high, so autodect works
+	 * with the bootloader.  The circuit is active low. */
+	gpio_set_mode(GPIOC, GPIO_MODE_OUTPUT_2_MHZ,
+		      GPIO_CNF_OUTPUT_OPENDRAIN, GPIO12);
+	gpio_clear(GPIOC, GPIO12);
+	gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO9 | GPIO8 | GPIO7 | GPIO6 | GPIO5 | GPIO4 | GPIO13 | GPIO14);
+	gpio_set_mode(GPIOB, GPIO_MODE_INPUT, GPIO_CNF_OUTPUT_OPENDRAIN, GPIO2);
+	is_jrp = gpio_get(GPIOB,GPIO2) != 0;
+	if(is_jrp)
+	{
+		/* JR-P Mode */
+		dev.idVendor = 0x11d4;
+		dev.idProduct = 0x8338;
+	}
+
+	usbd_dev = usbd_init(&st_usbfs_v1_usb_driver, &dev, &config, usb_strings, 3, usbd_control_buffer, sizeof(usbd_control_buffer));
+	usbd_register_set_config_callback(usbd_dev, cdcacm_set_config);
+	clock_setup();
+	ConfigureXGPIO();
+	XSPI_Setup();
+	while (1)
+	{
+		usbd_poll(usbd_dev);
+		if(xsvf_status == XSVF_STATUS_BUSY)
+		{
+			int8_t res = xsvfConsumeData();
+			if(res == 0)
+				xsvf_status = XSVF_STATUS_COMP;
+			else if(res > 0)
+				xsvf_status = XSVF_STATUS_ERR;
+		}	
+		read_post();
 	}
 }

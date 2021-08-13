@@ -13,6 +13,16 @@
 #define KIOSK_Pin GPIO1
 #define KIOSK_GPIO_Port GPIOA
 
+#define JTAG_GPIO_PORT GPIOA
+#define TCK GPIO10
+#define TCK_PIN 10
+#define TMS GPIO0
+#define TMS_PIN 0
+#define TDI GPIO8
+#define TDI_PIN 8
+#define TDO GPIO9
+#define TDO_PIN 9
+
 void ConfigureXGPIO(void);
 void SSSet(void);
 void SSReset(void);

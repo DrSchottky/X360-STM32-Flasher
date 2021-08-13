@@ -1,8 +1,9 @@
 # Xbox 360 STM32 NAND Flasher
 
 [G33KatWork's AVR Flasher](https://github.com/G33KatWork/XBox-360-AVR-flasher) ported to STM32 Blue Pill (STM32F103).  
-Supports 16MB NANDs and it's pretty fast (~70s for a full R/W)
-Added POST logger support (needs a 1v2->3v3 inverting shifter, you can build one with 8x BC337)
+Supports 16MB NANDs and it's pretty fast (~70s for a full R/W)  
+Added POST logger support (needs a 1v2->3v3 inverting shifter, you can build one with 8x BC337)  
+Added a J-Runner compatible XSVF player (based on [wschutzer's xsvfduino](https://github.com/wschutzer/xsvfduino))  
 
 ## Pinout
 ### SPI
@@ -25,6 +26,12 @@ Added POST logger support (needs a 1v2->3v3 inverting shifter, you can build one
 
 ## Power On/Off
 - PA1: KIOSK
+
+## JTAG
+- PA0: TMS
+- PA8: TDI
+- PA9: TDO
+- PA10: TCK
 
 # Mode
 You can switch between NAND-X and JR-P modes by moving the jumper on BOOT1 header

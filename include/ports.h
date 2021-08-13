@@ -8,28 +8,12 @@
 #define ports_dot_h
 #include <stdint.h>
 #include <libopencm3/stm32/gpio.h>
+#include "XGPIO.h"
 
 /* these constants are used to send the appropriate ports to setPort */
 /* they should be enumerated types, but some of the microcontroller  */
 /* compilers don't like enumerated types */
 
-/*
- Pin assignment on the bluepill:
- TCK - PB6
- TMS - PB7
- TDI - PB8
- TDO - PB9
- */
-
-#define JTAG_GPIO_PORT GPIOB
-#define TCK GPIO6
-#define TCK_PIN 6
-#define TMS GPIO7
-#define TMS_PIN 7
-#define TDI GPIO8
-#define TDI_PIN 8
-#define TDO GPIO5
-#define TDO_PIN 5
 
 extern uint8_t xsvf_read_data(void);
 extern void u_sleep( uint32_t m );
@@ -44,7 +28,7 @@ extern void setPort(uint16_t p, uint8_t val);
 inline int readTDOBit(void)
 {
   // return digitalRead(TDO);
-  return (GPIOB_IDR & (1u << TDO_PIN)) != 0;
+  return (GPIO_IDR(JTAG_GPIO_PORT) & (1u << TDO_PIN)) != 0;
 }
 
 /* make clock go down->up->down*/
